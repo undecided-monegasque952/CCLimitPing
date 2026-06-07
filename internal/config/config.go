@@ -68,7 +68,7 @@ func Default() Config {
 			Enabled:   true,
 			Prompt:    ".",
 			Model:     "haiku",
-			ExtraArgs: []string{"--max-turns", "1"},
+			ExtraArgs: []string{},
 		},
 		Codex: ProviderConfig{
 			Enabled:         true,
@@ -179,7 +179,9 @@ prompt = "."
 # Cheapest tier; triggering doesn't need a SOTA model and this avoids burning
 # Sonnet/Opus budget (incl. the separate weekly Opus bucket). Alias or full id.
 model = "haiku"
-extra_args = ["--max-turns", "1"]
+# Extra Claude CLI args. Headless/print-only flags such as -p, --print,
+# --output-format, and --max-turns are ignored.
+extra_args = []
 # Optional RFC3339 anchor for the first window's phase; empty = start ASAP.
 align_start = ""
 

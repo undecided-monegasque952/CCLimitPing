@@ -144,6 +144,14 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 		res, err := t.Provider.Trigger(tctx, s.dryRun)
 		tcancel()
 		if s.dryRun {
+			if err != nil {
+				s.log.Printf("[%s] dry-run ping failed: %v (retry in %s)", name, err, backoff)
+				if !sleepCtx(ctx, backoff) {
+					return
+				}
+				backoff = nextBackoff(backoff)
+				continue
+			}
 			s.log.Printf("[%s] DRY-RUN would ping now: %s", name, res.Command)
 			// In dry-run we can't actually start a window, so estimate the next
 			// cycle from the configured window length to keep the loop sane.

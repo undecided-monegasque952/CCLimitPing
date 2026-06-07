@@ -19,7 +19,7 @@ minimal message to start the next window immediately** — so your windows stay
 continuous and predictable.
 
 ```
-claude  ✓ pinged (6.6s, 33,129 tok (in 32,956 / out 173), $0.0042)
+claude  ✓ pinged (6.6s)
 codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 ```
 
@@ -27,7 +27,7 @@ codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 
 | Provider | Read usage (zero-quota) | Trigger | Auth |
 |---|---|---|---|
-| **Claude Code** | `…/api/oauth/usage` | `claude -p` | OAuth (Keychain / `~/.claude`) |
+| **Claude Code** | `…/api/oauth/usage` | interactive Claude Code CLI | OAuth (Keychain / `~/.claude`) |
 | **Codex** | `…/backend-api/wham/usage` | `codex exec` | OAuth (`~/.codex/auth.json`) |
 | **GLM** (Zhipu / Z.ai) | `…/api/monitor/usage/quota/limit` | minimal chat completion | API key (config / env) |
 
@@ -41,12 +41,15 @@ Two cleanly separated jobs:
 
 | Job | Mechanism | Cost |
 |-----|-----------|------|
-| **Trigger** a new window | the official CLI (`claude -p` / `codex exec`), or a minimal API call (GLM) | a tiny slice of quota (this is the point) |
+| **Trigger** a new window | the official CLI (interactive Claude Code / `codex exec`), or a minimal API call (GLM) | a tiny slice of quota (this is the point) |
 | **Read** usage & reset times | zero-quota usage endpoints (the same ones CodexBar / community plugins use) | none — never starts a window |
 
 - **Claude**: reads `GET https://api.anthropic.com/api/oauth/usage` using the
   OAuth token from the macOS Keychain (`Claude Code-credentials`) or
-  `~/.claude/.credentials.json`.
+  `~/.claude/.credentials.json`. Triggering uses a TTY-backed interactive
+  `claude "<prompt>"` session, so it continues to start the Claude
+  subscription-backed window after the headless print command moves to Agent
+  SDK/API credits.
 - **Codex**: reads `GET https://chatgpt.com/backend-api/wham/usage` using the
   OAuth token from `~/.codex/auth.json`.
 - **GLM**: reads `GET …/api/monitor/usage/quota/limit` (on `api.z.ai` or
@@ -111,18 +114,19 @@ limitping watch --dry-run      # log when pings would fire, without sending
 ```
 
 `ping` shows the exact command, a live timer (a spinner on a terminal), the
-**token usage** the ping consumed (parsed from `claude --output-format json` /
-`codex --json` / the GLM API response), and a **USD cost** where available:
+**token usage** the ping consumed where available (parsed from `codex --json` or
+the GLM API response), and a **USD cost** where available:
 
 ```
-claude  → claude -p . --model haiku --output-format json --max-turns 1
-claude  ✓ pinged (6.6s, 33,129 tok (in 32,956 / out 173), $0.0042)
+claude  → claude --model haiku .
+claude  ✓ pinged (6.6s)
 codex   → codex exec --skip-git-repo-check --json -c model_reasoning_effort=low -m gpt-5.4-mini ok
 codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 ```
 
 Cost sources:
-- **Claude** reports `total_cost_usd` directly.
+- **Claude** interactive mode does not expose per-invocation machine-readable
+  usage/cost, so no token/cost suffix is shown.
 - **Codex** (subscription) doesn't return a USD cost, so — like CodexBar/ccusage
   — we derive the equivalent API-rate cost from the
   [LiteLLM pricing dataset](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
@@ -133,8 +137,8 @@ Cost sources:
 - **GLM** is a per-prompt subscription, so no per-call USD cost is shown — only
   the token count.
 
-Most of Claude's input tokens are the cached Claude Code system prompt
-(`cache_read`), which is the unavoidable floor cost of `claude -p`.
+Claude triggering still consumes a small amount of Claude subscription quota,
+but the interactive CLI does not expose the exact per-ping token count.
 
 Example `status`:
 
@@ -161,7 +165,7 @@ notify           = true   # macOS notifications on ping/skip/failure
 enabled    = true
 prompt     = "."
 model      = "haiku"      # cheapest tier; triggering doesn't need a SOTA model
-extra_args = ["--max-turns", "1"]
+extra_args = []           # extra Claude CLI args; print/headless-only flags are ignored
 align_start = ""          # optional RFC3339 anchor for the first window; empty = start ASAP
 
 [codex]

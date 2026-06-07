@@ -55,7 +55,10 @@ func runPing(parent context.Context, out io.Writer, p provider.Provider, dryRun,
 	name := p.Name()
 
 	// Resolve the exact command first (a dry-run Trigger executes nothing).
-	dry, _ := p.Trigger(parent, true)
+	dry, err := p.Trigger(parent, true)
+	if err != nil {
+		return err
+	}
 	if dryRun {
 		fmt.Fprintf(out, "%-7s would run: %s\n", name, dry.Command)
 		return nil

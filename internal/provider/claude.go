@@ -1,13 +1,18 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/creack/pty"
 
 	"github.com/wavever/CCLimitPing/internal/auth"
 	"github.com/wavever/CCLimitPing/internal/config"
@@ -19,10 +24,14 @@ const (
 	claudeOAuthBeta   = "oauth-2025-04-20"
 	claudeFiveHourSec = 5 * 60 * 60
 	claudeWeeklySec   = 7 * 24 * 60 * 60
+
+	claudeInteractiveExitDelay = 2 * time.Second
 )
 
 // Claude reads usage via the OAuth usage endpoint and triggers windows via the
-// `claude -p` headless CLI.
+// interactive, TTY-backed Claude Code CLI. Print mode is intentionally avoided
+// because it is billed through Agent SDK/API credits rather than Claude
+// subscription limits.
 type Claude struct {
 	cfg  config.ProviderConfig
 	auth *auth.ClaudeAuth
@@ -87,47 +96,153 @@ func (c *Claude) Trigger(ctx context.Context, dryRun bool) (*TriggerResult, erro
 	if prompt == "" {
 		prompt = "."
 	}
-	args := []string{"-p", prompt}
+	args := []string{}
 	if c.cfg.Model != "" {
 		args = append(args, "--model", c.cfg.Model)
 	}
-	args = append(args, "--output-format", "json")
-	args = append(args, c.cfg.ExtraArgs...)
+	args = append(args, claudeInteractiveArgs(c.cfg.ExtraArgs)...)
+	args = append(args, prompt)
+
 	res := &TriggerResult{Command: "claude " + shellJoin(args)}
 	if dryRun {
 		return res, nil
 	}
 
-	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "claude", args...)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return res, fmt.Errorf("claude -p failed: %w: %s", err, truncate(append(stderr.Bytes(), stdout.Bytes()...), 300))
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return res, fmt.Errorf("claude interactive failed to start: %w", err)
+	}
+	defer ptmx.Close()
+
+	output := &limitedBuffer{limit: 4096}
+	go func() {
+		_, _ = io.Copy(output, ptmx)
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	exitTimer := time.NewTimer(claudeInteractiveExitDelay)
+	defer exitTimer.Stop()
+
+	select {
+	case err := <-done:
+		return res, claudeInteractiveErr(err, output)
+	case <-ctx.Done():
+		return res, claudeInteractiveCancel(ctx, cmd, ptmx, done, output)
+	case <-exitTimer.C:
+		if _, err := ptmx.Write([]byte("/exit\r")); err != nil {
+			return res, fmt.Errorf("claude interactive failed to queue exit: %w: %s", err, truncate(output.Bytes(), 300))
+		}
 	}
 
-	var r struct {
-		IsError      bool    `json:"is_error"`
-		Result       string  `json:"result"`
-		TotalCostUSD float64 `json:"total_cost_usd"`
-		Usage        struct {
-			InputTokens              int `json:"input_tokens"`
-			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-			OutputTokens             int `json:"output_tokens"`
-		} `json:"usage"`
+	select {
+	case err := <-done:
+		return res, claudeInteractiveErr(err, output)
+	case <-ctx.Done():
+		return res, claudeInteractiveCancel(ctx, cmd, ptmx, done, output)
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &r); err == nil {
-		if r.IsError {
-			return res, fmt.Errorf("claude -p returned an error: %s", r.Result)
+}
+
+func claudeInteractiveErr(err error, output *limitedBuffer) error {
+	if err == nil {
+		return nil
+	}
+	tail := truncate(output.Bytes(), 300)
+	if tail == "" {
+		return fmt.Errorf("claude interactive failed: %w", err)
+	}
+	return fmt.Errorf("claude interactive failed: %w: %s", err, tail)
+}
+
+func claudeInteractiveCancel(ctx context.Context, cmd *exec.Cmd, ptmx *os.File, done <-chan error, output *limitedBuffer) error {
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	_ = ptmx.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+	}
+	tail := truncate(output.Bytes(), 300)
+	if tail == "" {
+		return fmt.Errorf("claude interactive cancelled: %w", ctx.Err())
+	}
+	return fmt.Errorf("claude interactive cancelled: %w: %s", ctx.Err(), tail)
+}
+
+func claudeInteractiveArgs(extra []string) []string {
+	out := make([]string, 0, len(extra))
+	for i := 0; i < len(extra); i++ {
+		arg := extra[i]
+		flag, inlineValue := splitFlagValue(arg)
+		if claudeInteractiveUnsupportedValueArg(flag) {
+			if !inlineValue && i+1 < len(extra) {
+				i++
+			}
+			continue
 		}
-		res.InputTokens = r.Usage.InputTokens + r.Usage.CacheCreationInputTokens + r.Usage.CacheReadInputTokens
-		res.OutputTokens = r.Usage.OutputTokens
-		res.TotalTokens = res.InputTokens + res.OutputTokens
-		res.CostUSD = r.TotalCostUSD
-		res.HasUsage = true
+		if claudeInteractiveUnsupportedArg(flag) {
+			continue
+		}
+		out = append(out, arg)
 	}
-	return res, nil
+	return out
+}
+
+func splitFlagValue(arg string) (flag string, inlineValue bool) {
+	if strings.HasPrefix(arg, "--") {
+		if i := strings.Index(arg, "="); i > 0 {
+			return arg[:i], true
+		}
+	}
+	return arg, false
+}
+
+func claudeInteractiveUnsupportedArg(flag string) bool {
+	switch flag {
+	case "-p", "--print", "--bare", "--init", "--maintenance", "--include-hook-events",
+		"--include-partial-messages", "--replay-user-messages", "--prompt-suggestions",
+		"--no-session-persistence":
+		return true
+	default:
+		return false
+	}
+}
+
+func claudeInteractiveUnsupportedValueArg(flag string) bool {
+	switch flag {
+	case "--output-format", "--input-format", "--json-schema", "--max-turns",
+		"--max-budget-usd", "--permission-prompt-tool", "--fallback-model":
+		return true
+	default:
+		return false
+	}
+}
+
+type limitedBuffer struct {
+	mu    sync.Mutex
+	limit int
+	buf   []byte
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf = append(b.buf, p...)
+	if b.limit > 0 && len(b.buf) > b.limit {
+		b.buf = b.buf[len(b.buf)-b.limit:]
+	}
+	return len(p), nil
+}
+
+func (b *limitedBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]byte(nil), b.buf...)
 }
 
 func parseTime(s string) time.Time {

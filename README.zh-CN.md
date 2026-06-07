@@ -17,7 +17,7 @@
 下一个窗口**——让你的窗口连续、可预测。
 
 ```
-claude  ✓ pinged (6.6s, 33,129 tok (in 32,956 / out 173), $0.0042)
+claude  ✓ pinged (6.6s)
 codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 ```
 
@@ -25,7 +25,7 @@ codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 
 | Provider | 读取用量(零消耗) | 触发方式 | 鉴权 |
 |---|---|---|---|
-| **Claude Code** | `…/api/oauth/usage` | `claude -p` | OAuth(钥匙串 / `~/.claude`) |
+| **Claude Code** | `…/api/oauth/usage` | 交互式 Claude Code CLI | OAuth(钥匙串 / `~/.claude`) |
 | **Codex** | `…/backend-api/wham/usage` | `codex exec` | OAuth(`~/.codex/auth.json`) |
 | **GLM**(智谱 / Z.ai) | `…/api/monitor/usage/quota/limit` | 最小 chat 请求 | API Key(配置 / 环境变量) |
 
@@ -39,11 +39,13 @@ codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 
 | 任务 | 机制 | 代价 |
 |------|------|------|
-| **触发**新窗口 | 官方 CLI(`claude -p` / `codex exec`),或一次最小 API 调用(GLM) | 消耗一点额度(这正是功能本身) |
+| **触发**新窗口 | 官方 CLI(交互式 Claude Code / `codex exec`),或一次最小 API 调用(GLM) | 消耗一点额度(这正是功能本身) |
 | **读取**用量与重置时刻 | 零消耗用量端点(和 CodexBar / 社区插件用的是同一批) | 不消耗,也绝不会起算窗口 |
 
 - **Claude**:用 macOS 钥匙串(`Claude Code-credentials`)或 `~/.claude/.credentials.json`
-  里的 OAuth token,读 `GET https://api.anthropic.com/api/oauth/usage`。
+  里的 OAuth token,读 `GET https://api.anthropic.com/api/oauth/usage`。触发使用带
+  TTY 的交互式 `claude "<prompt>"` 会话,因此在 headless print 命令改走 Agent
+  SDK/API credits 后仍会起算 Claude 订阅窗口。
 - **Codex**:用 `~/.codex/auth.json` 里的 OAuth token,读
   `GET https://chatgpt.com/backend-api/wham/usage`。
 - **GLM**:用你的 Coding Plan API Key,读 `GET …/api/monitor/usage/quota/limit`
@@ -106,18 +108,18 @@ limitping watch --dry-run      # 只记录何时会触发,不真正发送
 ```
 
 `ping` 会显示具体命令、实时计时(终端下是 spinner)、本次 ping 消耗的 **token 数**
-(从 `claude --output-format json` / `codex --json` / GLM API 返回里解析),以及在可
-获取时显示 **美元费用**:
+(在 `codex --json` / GLM API 返回里解析),以及在可获取时显示 **美元费用**:
 
 ```
-claude  → claude -p . --model haiku --output-format json --max-turns 1
-claude  ✓ pinged (6.6s, 33,129 tok (in 32,956 / out 173), $0.0042)
+claude  → claude --model haiku .
+claude  ✓ pinged (6.6s)
 codex   → codex exec --skip-git-repo-check --json -c model_reasoning_effort=low -m gpt-5.4-mini ok
 codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
 ```
 
 费用来源:
-- **Claude** 直接返回 `total_cost_usd`。
+- **Claude** 交互式模式没有逐次 machine-readable 的用量/费用输出,所以不会显示
+  token/cost 后缀。
 - **Codex**(订阅)不返回美元费用,因此——和 CodexBar/ccusage 一样——我们用
   [LiteLLM 定价数据集](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
   按等价 API 单价折算(`费用 = 非缓存输入 × input + 缓存输入 × cache-read + 输出 × output`)。
@@ -125,8 +127,7 @@ codex   ✓ pinged (13.6s, 16,862 tok (in 16,814 / out 48), $0.0098)
   后缀回退。需要设置 `[codex].model` 才能查到单价。
 - **GLM** 是按 prompt 计的订阅,没有逐次的美元费用,因此只显示 token 数。
 
-Claude 的输入 token 绝大部分是被缓存的 Claude Code 系统提示词(`cache_read`),这是
-`claude -p` 无法避免的底噪成本。
+Claude 触发仍会消耗少量 Claude 订阅额度,但交互式 CLI 不暴露本次 ping 的精确 token 数。
 
 `status` 示例:
 
@@ -153,7 +154,7 @@ notify           = true   # 在 ping/跳过/失败 时弹 macOS 通知
 enabled    = true
 prompt     = "."
 model      = "haiku"      # 最便宜的档位;触发并不需要 SOTA 模型
-extra_args = ["--max-turns", "1"]
+extra_args = []           # 额外 Claude CLI 参数;print/headless-only 参数会被忽略
 align_start = ""          # 可选 RFC3339:首个窗口的相位锚点;留空 = 尽快开始
 
 [codex]
