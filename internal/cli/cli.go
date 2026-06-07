@@ -13,7 +13,7 @@ import (
 )
 
 // Version is the binary version, overridable at build time via -ldflags.
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // Execute runs the root command.
 func Execute() error {
@@ -24,7 +24,7 @@ func Execute() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newStatusCmd(), newPingCmd(), newWatchCmd(), newConfigCmd(), newVersionCmd())
+	root.AddCommand(newStatusCmd(), newPingCmd(), newWatchCmd(), newConfigCmd(), newUpgradeCmd(), newUninstallCmd(), newVersionCmd())
 	return root.Execute()
 }
 

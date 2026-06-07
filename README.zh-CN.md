@@ -91,6 +91,23 @@ curl -fsSL https://raw.githubusercontent.com/wavever/CCLimitPing/main/install.sh
 平台的预编译二进制,装到 `/usr/local/bin`(或 `~/.local/bin`)。可用
 `LIMITPING_INSTALL_DIR` 覆盖安装目录。
 
+**升级** —— 用最新 Release 替换已安装的二进制:
+
+```sh
+limitping upgrade
+```
+
+`limitping update` 是别名。
+
+**卸载** —— 删除已安装的二进制以及配置/缓存:
+
+```sh
+limitping uninstall
+```
+
+使用 `limitping uninstall --keep-config` 可保留 `~/.config/limitping`(或
+`$XDG_CONFIG_HOME/limitping`)。
+
 **手动下载** —— 从 [Releases](https://github.com/wavever/CCLimitPing/releases) 页面
 下载对应平台的压缩包(macOS/Linux 是 `.tar.gz`,Windows 是 `.zip`):
 
@@ -127,6 +144,8 @@ limitping ping --dry-run       # 只打印将执行的命令,不真正发送
 limitping watch                # 前台守护:在每个窗口重置时自动 ping
 limitping watch claude         # 只监测某一个 Provider(claude|codex|glm)
 limitping watch --dry-run      # 只记录何时会触发,不真正发送
+limitping upgrade              # 更新到最新 GitHub Release(update 是别名)
+limitping uninstall            # 删除 limitping 以及配置/缓存
 ```
 
 `ping` 会显示具体命令、实时计时(终端下是 spinner)、本次 ping 消耗的 **token 数**
@@ -281,7 +300,7 @@ internal/provider        各 Provider 的 ReadUsage(端点)+ Trigger(CLI / API)
 internal/pricing         基于 LiteLLM 的美元费用查询(Codex)
 internal/scheduler       watch 引擎(sleep 到重置、尊重周限额、退避重试)
 internal/notify          macOS osascript 通知
-internal/cli             cobra 命令:status、ping、watch、config、version
+internal/cli             cobra 命令:status、ping、watch、config、upgrade、uninstall、version
 ```
 
 ## 贡献
@@ -304,7 +323,7 @@ Provider 都隔离在 `internal/provider`(每家一个文件),只需实现一个
 二进制并发布 Release。
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 ## 许可证

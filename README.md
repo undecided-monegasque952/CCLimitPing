@@ -99,6 +99,23 @@ Downloads the right prebuilt binary from the
 [latest release](https://github.com/wavever/CCLimitPing/releases/latest) into
 `/usr/local/bin` (or `~/.local/bin`). Override with `LIMITPING_INSTALL_DIR`.
 
+**Upgrade** — replace the installed binary with the latest release:
+
+```sh
+limitping upgrade
+```
+
+`limitping update` is an alias.
+
+**Uninstall** — remove the installed binary plus config/cache:
+
+```sh
+limitping uninstall
+```
+
+Use `limitping uninstall --keep-config` to preserve `~/.config/limitping` (or
+`$XDG_CONFIG_HOME/limitping`).
+
 **Manual download** — grab the archive for your platform from the
 [Releases](https://github.com/wavever/CCLimitPing/releases) page (`.tar.gz` for
 macOS/Linux, `.zip` for Windows):
@@ -136,6 +153,8 @@ limitping ping --dry-run       # show the commands without sending
 limitping watch                # foreground daemon: ping each window at reset
 limitping watch claude         # watch only one provider (claude|codex|glm)
 limitping watch --dry-run      # log when pings would fire, without sending
+limitping upgrade              # update to the latest GitHub release (alias: update)
+limitping uninstall            # remove limitping plus config/cache
 ```
 
 `ping` shows the exact command, a live timer (a spinner on a terminal), the
@@ -308,7 +327,7 @@ internal/provider        per-provider ReadUsage (endpoint) + Trigger (CLI / API)
 internal/pricing         LiteLLM-based USD cost lookup (Codex)
 internal/scheduler       the watch engine (sleep-until-reset, weekly-respect, backoff)
 internal/notify          macOS osascript notifications
-internal/cli             cobra commands: status, ping, watch, config, version
+internal/cli             cobra commands: status, ping, watch, config, upgrade, uninstall, version
 ```
 
 ## Contributing
@@ -331,7 +350,7 @@ mostly a self-contained file plus wiring in `internal/cli` and `internal/config`
 build the cross-platform binaries and publish a Release.
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 ## License
