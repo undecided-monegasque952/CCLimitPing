@@ -110,13 +110,15 @@ Downloads the right prebuilt binary from the
 limitping upgrade
 ```
 
-`limitping update` is an alias.
+Aliases: `limitping up`, `limitping update`.
 
 **Uninstall** — remove the installed binary plus config/cache:
 
 ```sh
 limitping uninstall
 ```
+
+Aliases: `limitping rm`, `limitping remove`.
 
 Use `limitping uninstall --keep-config` to preserve `~/.config/limitping` (or
 `$XDG_CONFIG_HOME/limitping`).
@@ -165,6 +167,22 @@ limitping uninstall            # remove limitping plus config/cache (aliases: rm
 
 Short aliases are also available for config commands: `limitping c i` for
 `config init` and `limitping c p` for `config path`.
+
+### Command aliases
+
+`limitping --help` lists aliases inline, for example `ping, p`.
+
+| Command | Aliases |
+| --- | --- |
+| `status` | `s`, `stat` |
+| `ping` | `p` |
+| `watch` | `w` |
+| `config` | `c`, `cfg` |
+| `config init` | `c i` |
+| `config path` | `c p` |
+| `version` | `v`, `ver` |
+| `upgrade` | `up`, `update` |
+| `uninstall` | `rm`, `remove` |
 
 `ping` shows the exact command, a live timer (a spinner on a terminal), the
 **token usage** the ping consumed where available (parsed from `codex --json` or

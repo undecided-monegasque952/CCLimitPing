@@ -101,13 +101,15 @@ curl -fsSL https://raw.githubusercontent.com/wavever/CCLimitPing/main/install.sh
 limitping upgrade
 ```
 
-`limitping update` 是别名。
+简称/别名:`limitping up`、`limitping update`。
 
 **卸载** —— 删除已安装的二进制以及配置/缓存:
 
 ```sh
 limitping uninstall
 ```
+
+简称/别名:`limitping rm`、`limitping remove`。
 
 使用 `limitping uninstall --keep-config` 可保留 `~/.config/limitping`(或
 `$XDG_CONFIG_HOME/limitping`)。
@@ -155,6 +157,22 @@ limitping uninstall            # 删除 limitping 以及配置/缓存(简称: rm
 
 配置命令也支持简称:`limitping c i` 等同于 `config init`, `limitping c p` 等同于
 `config path`。
+
+### 命令简称
+
+`limitping --help` 会在命令列表中直接展示简称,例如 `ping, p`。
+
+| 命令 | 简称/别名 |
+| --- | --- |
+| `status` | `s`、`stat` |
+| `ping` | `p` |
+| `watch` | `w` |
+| `config` | `c`、`cfg` |
+| `config init` | `c i` |
+| `config path` | `c p` |
+| `version` | `v`、`ver` |
+| `upgrade` | `up`、`update` |
+| `uninstall` | `rm`、`remove` |
 
 `ping` 会显示具体命令、实时计时(终端下是 spinner)、本次 ping 消耗的 **token 数**
 (在 `codex --json` / GLM API 返回里解析),以及在可获取时显示 **美元费用**:

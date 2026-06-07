@@ -9,6 +9,16 @@ through GitHub Actions and GoReleaser.
 
 - Nothing yet.
 
+## v0.3.0
+
+- Added short command aliases such as `ping` / `p`, `status` / `s`,
+  `watch` / `w`, `version` / `v`, `upgrade` / `up`, and `uninstall` / `rm`.
+- Updated help output to show command aliases inline and clarify accepted
+  `ping` / `watch` provider arguments.
+- Added Chinese CLI help text when the system locale is Chinese.
+- Documented upgrade, uninstall, and command aliases in the English and Chinese
+  READMEs.
+
 ## v0.2.1
 
 - `watch` now defers automatic pings while a Claude/Codex CLI task is already
