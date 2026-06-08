@@ -14,6 +14,7 @@ import (
 
 	"github.com/creack/pty"
 
+	"github.com/wavever/CCLimitPing/internal/activity"
 	"github.com/wavever/CCLimitPing/internal/auth"
 	"github.com/wavever/CCLimitPing/internal/config"
 	"github.com/wavever/CCLimitPing/internal/usage"
@@ -44,6 +45,11 @@ func NewClaude(cfg config.ProviderConfig) *Claude {
 func (c *Claude) Name() string { return "claude" }
 
 func (c *Claude) ActiveTask(ctx context.Context) (string, bool, error) {
+	// Prefer the hook-based signal (true mid-turn detection) when installed;
+	// otherwise fall back to scanning for a running CLI process.
+	if activity.Enabled("claude") {
+		return activity.Active("claude")
+	}
 	return activeCLIProcess(ctx,
 		[]string{"claude"},
 		[]string{"claude-code", "@anthropic-ai/claude"})

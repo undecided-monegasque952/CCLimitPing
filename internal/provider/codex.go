@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/wavever/CCLimitPing/internal/activity"
 	"github.com/wavever/CCLimitPing/internal/auth"
 	"github.com/wavever/CCLimitPing/internal/config"
 	"github.com/wavever/CCLimitPing/internal/pricing"
@@ -31,6 +32,11 @@ func NewCodex(cfg config.ProviderConfig) *Codex {
 func (c *Codex) Name() string { return "codex" }
 
 func (c *Codex) ActiveTask(ctx context.Context) (string, bool, error) {
+	// Prefer the hook-based signal (true mid-turn detection) when installed;
+	// otherwise fall back to scanning for a running CLI process.
+	if activity.Enabled("codex") {
+		return activity.Active("codex")
+	}
 	return activeCLIProcess(ctx,
 		[]string{"codex"},
 		[]string{"@openai/codex"})

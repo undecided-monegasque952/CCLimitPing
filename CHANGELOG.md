@@ -7,6 +7,11 @@ through GitHub Actions and GoReleaser.
 
 ## Unreleased
 
+- Added hook-based active-session detection: `limitping hooks install` /
+  `uninstall` registers limitping's hooks in `~/.claude/settings.json` and
+  `~/.codex/hooks.json` so `watch` can tell when a session is genuinely mid-turn
+  (between a prompt and its `Stop`) rather than just having a live process. Falls
+  back to the previous process scan when hooks aren't installed.
 - Removed the experimental GLM (Zhipu / Z.ai) provider. `limitping` now targets
   Claude Code and Codex only; the `[glm]` config block and `glm` provider
   argument are gone.

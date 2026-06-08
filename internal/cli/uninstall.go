@@ -35,6 +35,10 @@ func runUninstall(out, errOut io.Writer, keepConfig bool) error {
 		return fmt.Errorf("locating current executable: %w", err)
 	}
 
+	// Strip our hook entries from the CLI configs first, so we don't leave hooks
+	// pointing at a binary we're about to delete. Best-effort: never abort.
+	removeHooksBestEffort(errOut)
+
 	if err := removeExecutable(exe, out, errOut); err != nil {
 		return err
 	}
