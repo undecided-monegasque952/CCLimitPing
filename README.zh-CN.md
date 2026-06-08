@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="CCLimitPing icon" width="160">
+</p>
+
 # CCLimitPing (`limitping`)
 
 [English](README.md) | **中文**
