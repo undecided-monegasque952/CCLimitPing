@@ -7,6 +7,10 @@ through GitHub Actions and GoReleaser.
 
 ## Unreleased
 
+- `watch` now draws a live status line on an interactive terminal: a spinner
+  plus each provider's current state and a live countdown to its next ping,
+  redrawn beneath the scrolling log. It auto-disables when output isn't a TTY
+  (e.g. `bg`'s log file or a pipe), so logs stay free of control sequences.
 - Added `limitping background` (alias `bg`) to run `watch` as a detached
   background process, freeing the terminal: `bg start [provider] [--dry-run]`
   launches it, `bg status` (or bare `bg`) reports pid/uptime/log path plus the

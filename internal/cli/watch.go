@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -37,20 +36,11 @@ func newWatchCmd() *cobra.Command {
 				return err
 			}
 
-			logger := log.New(cmd.OutOrStdout(), "", log.LstdFlags)
-			names := make([]string, len(targets))
-			for i, t := range targets {
-				names[i] = t.Provider.Name()
-			}
-			logger.Printf("watching %v (weekly_threshold=%.2f, reset_buffer=%s, notify=%t, dry_run=%t)",
-				names, cfg.WeeklyThreshold, cfg.ResetBuffer.Duration, cfg.Notify, dryRun)
-
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			s := scheduler.New(cfg, targets, dryRun, logger)
+			s := scheduler.New(cfg, targets, dryRun, cmd.OutOrStdout())
 			s.Run(ctx)
-			logger.Printf("shutting down")
 			return nil
 		},
 	}

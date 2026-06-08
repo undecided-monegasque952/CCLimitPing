@@ -1,13 +1,16 @@
 // Package scheduler runs the watch loop: for each provider it sleeps until the
 // 5h window resets, then triggers a minimal ping to start the next window,
 // keeping windows back-to-back. It respects the weekly limit and never lets a
-// transient error kill the loop.
+// transient error kill the loop. On an interactive terminal it also draws a live
+// status line (spinner + per-provider countdowns) beneath the scrolling log.
 package scheduler
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/wavever/CCLimitPing/internal/config"
@@ -39,14 +42,45 @@ type Scheduler struct {
 	targets []Target
 	dryRun  bool
 	log     *log.Logger
+	live    *liveStatus
 }
 
-func New(cfg config.Config, targets []Target, dryRun bool, logger *log.Logger) *Scheduler {
-	return &Scheduler{cfg: cfg, targets: targets, dryRun: dryRun, log: logger}
+// New builds a scheduler that logs to out. When out is an interactive terminal,
+// a live status line (spinner + per-provider countdowns) is drawn beneath the
+// scrolling log; otherwise log output passes straight through.
+func New(cfg config.Config, targets []Target, dryRun bool, out io.Writer) *Scheduler {
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.Provider.Name()
+	}
+	live := newLiveStatus(out, names)
+	return &Scheduler{
+		cfg:     cfg,
+		targets: targets,
+		dryRun:  dryRun,
+		log:     log.New(live, "", log.LstdFlags),
+		live:    live,
+	}
 }
 
 // Run starts one loop per target and blocks until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) {
+	names := make([]string, len(s.targets))
+	for i, t := range s.targets {
+		names[i] = t.Provider.Name()
+	}
+	s.log.Printf("watching %v (weekly_threshold=%.2f, reset_buffer=%s, notify=%t, dry_run=%t)",
+		names, s.cfg.WeeklyThreshold, s.cfg.ResetBuffer.Duration, s.cfg.Notify, s.dryRun)
+
+	var liveWG sync.WaitGroup
+	if s.live.enabled {
+		liveWG.Add(1)
+		go func() {
+			defer liveWG.Done()
+			s.live.run(ctx)
+		}()
+	}
+
 	done := make(chan struct{}, len(s.targets))
 	for _, t := range s.targets {
 		go func(t Target) {
@@ -57,6 +91,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 	for range s.targets {
 		<-done
 	}
+	liveWG.Wait() // let the render loop clear its line before the final log
+	s.log.Printf("shutting down")
 }
 
 func (s *Scheduler) runTarget(ctx context.Context, t Target) {
@@ -70,11 +106,13 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 			return
 		}
 
+		s.live.set(name, "checking usage…", time.Time{})
 		rctx, cancel := context.WithTimeout(ctx, readTimeout)
 		u, err := t.Provider.ReadUsage(rctx)
 		cancel()
 		if err != nil {
 			s.log.Printf("[%s] read usage failed: %v (retry in %s)", name, err, backoff)
+			s.live.set(name, "read failed — retrying", time.Now().Add(backoff))
 			if !sleepCtx(ctx, backoff) {
 				return
 			}
@@ -92,6 +130,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 			}
 			s.log.Printf("[%s] weekly limit exhausted (%.0f%%); sleeping %s until weekly reset",
 				name, u.Weekly.UsedPercent, wait.Round(time.Second))
+			s.live.set(name, fmt.Sprintf("weekly limit reached (%.0f%%)", u.Weekly.UsedPercent), time.Now().Add(wait))
 			s.notify(name+": weekly limit reached", "Skipping pings until weekly reset")
 			if !sleepCtx(ctx, wait) {
 				return
@@ -105,6 +144,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 			s.log.Printf("[%s] 5h window active (%.0f%%), next ping at %s (in %s)",
 				name, u.FiveHour.UsedPercent,
 				u.FiveHour.ResetsAt.Local().Format("15:04:05"), wait.Round(time.Second))
+			s.live.set(name, fmt.Sprintf("5h window %.0f%% — next ping", u.FiveHour.UsedPercent), time.Now().Add(wait))
 			if !sleepCtx(ctx, wait) {
 				return
 			}
@@ -118,6 +158,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 			if time.Now().Before(est) {
 				wait := time.Until(est) + s.cfg.ResetBuffer.Duration
 				s.log.Printf("[%s] recent ping not yet visible; waiting %s", name, wait.Round(time.Second))
+				s.live.set(name, "awaiting window", time.Now().Add(wait))
 				if !sleepCtx(ctx, wait) {
 					return
 				}
@@ -130,6 +171,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 			if d := time.Until(t.AlignStart); d > 0 {
 				s.log.Printf("[%s] waiting for align_start %s (in %s)",
 					name, t.AlignStart.Local().Format("15:04:05"), d.Round(time.Second))
+				s.live.set(name, "waiting for align_start", t.AlignStart)
 				if !sleepCtx(ctx, d) {
 					return
 				}
@@ -142,6 +184,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 		} else if active {
 			s.log.Printf("[%s] window reset but %s is running; waiting %s for it to start the next window",
 				name, desc, activeTaskPoll.Round(time.Second))
+			s.live.set(name, desc+" active — deferring ping", time.Now().Add(activeTaskPoll))
 			if !sleepCtx(ctx, activeTaskPoll) {
 				return
 			}
@@ -152,6 +195,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 		if !s.dryRun {
 			s.log.Printf("[%s] window reset — triggering ping now…", name)
 		}
+		s.live.set(name, "window reset — triggering ping…", time.Time{})
 		tctx, tcancel := context.WithTimeout(ctx, triggerTimeout)
 		res, err := t.Provider.Trigger(tctx, s.dryRun)
 		tcancel()
@@ -165,6 +209,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 				continue
 			}
 			s.log.Printf("[%s] DRY-RUN would ping now: %s", name, res.Command)
+			s.live.set(name, "dry-run — would ping now", time.Time{})
 			// In dry-run we can't actually start a window, so estimate the next
 			// cycle from the configured window length to keep the loop sane.
 			lastPingAt = time.Now()
@@ -172,6 +217,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 		}
 		if err != nil {
 			s.log.Printf("[%s] ping failed: %v (retry in %s)", name, err, backoff)
+			s.live.set(name, "ping failed — retrying", time.Now().Add(backoff))
 			s.notify(name+": ping failed", err.Error())
 			if !sleepCtx(ctx, backoff) {
 				return
@@ -181,6 +227,7 @@ func (s *Scheduler) runTarget(ctx context.Context, t Target) {
 		}
 		lastPingAt = time.Now()
 		s.log.Printf("[%s] ping sent, new window started%s", name, triggerCost(res))
+		s.live.set(name, "ping sent — new window started", time.Time{})
 		s.notify(name+": window started", "New 5h window"+triggerCost(res))
 
 		if !sleepCtx(ctx, postPingGrace) {
