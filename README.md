@@ -43,7 +43,10 @@ curl -fsSL https://raw.githubusercontent.com/wavever/CCLimitPing/main/install.sh
 limitping config init
 limitping ping --dry-run
 limitping status
-limitping watch
+limitping watch                # foreground (Ctrl-C to stop)
+# ...or run it in the background, freeing your terminal:
+limitping bg start
+limitping bg status
 ```
 
 Use `limitping ping --dry-run` or `limitping watch --dry-run` first if you want
@@ -154,6 +157,10 @@ limitping ping --dry-run       # show the commands without sending
 limitping watch                # foreground daemon: ping each window at reset (alias: w)
 limitping watch claude         # watch only one provider (claude|codex)
 limitping watch --dry-run      # log when pings would fire, without sending
+limitping bg start             # run watch in the background, freeing the terminal
+limitping bg status            # running? + each watched provider's usage (alias: limitping bg)
+limitping bg logs -f           # follow the background watcher's log
+limitping bg stop              # stop the background watcher
 limitping hooks install        # install active-session detection hooks (claude|codex|all)
 limitping hooks uninstall      # remove those hooks
 limitping version              # print the version (aliases: v, ver)
@@ -173,6 +180,7 @@ Short aliases are also available for config commands: `limitping c i` for
 | `status` | `s`, `stat` |
 | `ping` | `p` |
 | `watch` | `w` |
+| `background` | `bg` |
 | `config` | `c`, `cfg` |
 | `config init` | `c i` |
 | `config path` | `c p` |
@@ -294,9 +302,25 @@ written). The hooks invoke the hidden `limitping hook <provider>` command on
 > Codex once to enable them. Remove everything later with
 > `limitping hooks uninstall` (also done automatically by `limitping uninstall`).
 
-## Run `watch` in the background (macOS, optional)
+## Run `watch` in the background
 
-`watch` runs in the foreground. To keep it running via `launchd`, create
+`watch` runs in the foreground. To free your terminal, run it as a detached
+background process with the built-in `bg` command:
+
+```sh
+limitping bg start          # start watch detached from the terminal
+limitping bg status         # running? pid, uptime, log + each provider's usage (alias: limitping bg)
+limitping bg logs -f        # follow the watcher's log (-n N for last N lines)
+limitping bg stop           # stop it
+```
+
+`bg start` takes the same optional `[provider]` argument and `--dry-run` flag as
+`watch`. Only one background watcher runs at a time, and its output is written to
+`~/.config/limitping/bg.log` (honors `$XDG_CONFIG_HOME`). The process detaches
+into its own session, so it survives the shell closing — but it does **not**
+restart on reboot.
+
+For **start-at-login** on macOS, use a `launchd` agent instead. Create
 `~/Library/LaunchAgents/com.limitping.watch.plist`:
 
 ```xml
@@ -347,7 +371,7 @@ internal/activity        hook-based active-session state (shared by the hook cmd
 internal/pricing         LiteLLM-based USD cost lookup (Codex)
 internal/scheduler       the watch engine (sleep-until-reset, weekly-respect, backoff)
 internal/notify          macOS osascript notifications
-internal/cli             cobra commands: status, ping, watch, config, hooks, upgrade, uninstall, version
+internal/cli             cobra commands: status, ping, watch, background, config, hooks, upgrade, uninstall, version
 ```
 
 ## Contributing

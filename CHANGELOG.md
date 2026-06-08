@@ -7,7 +7,13 @@ through GitHub Actions and GoReleaser.
 
 ## Unreleased
 
-- Nothing yet.
+- Added `limitping background` (alias `bg`) to run `watch` as a detached
+  background process, freeing the terminal: `bg start [provider] [--dry-run]`
+  launches it, `bg status` (or bare `bg`) reports pid/uptime/log path plus the
+  resolved list of watched providers and each one's current 5h/weekly usage,
+  `bg stop` ends it, and `bg logs [-f] [-n N]` shows its output. Only one
+  background watcher runs at a time; state and logs live under the config dir
+  (`bg.json` / `bg.log`).
 
 ## v0.4.0
 

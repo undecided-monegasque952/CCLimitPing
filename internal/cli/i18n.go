@@ -35,6 +35,34 @@ type cliText struct {
 	watchLong       string
 	watchDryRunFlag string
 
+	bgShort          string
+	bgLong           string
+	bgExample        string
+	bgStartShort     string
+	bgStartLong      string
+	bgStatusShort    string
+	bgStopShort      string
+	bgLogsShort      string
+	bgLogsFollowFlag string
+	bgLogsLinesFlag  string
+
+	// bg runtime (stdout) strings.
+	bgHintStart       string
+	bgHintManage      string
+	bgNotRunning      string
+	bgClearedStaleFmt string
+	bgRunningFmt      string
+	bgFieldWatching   string
+	bgFieldUptime     string
+	bgFieldStarted    string
+	bgFieldLogs       string
+	bgStartedFmt      string
+	bgLogPathFmt      string
+	bgStartFollowUp   string
+	bgStopWasStaleFmt string
+	bgStoppedFmt      string
+	bgNoLogYetFmt     string
+
 	configShort     string
 	configInitShort string
 	configInitForce string
@@ -160,6 +188,50 @@ Examples:
   limitping watch --dry-run`,
 	watchDryRunFlag: "log when pings would fire without sending them",
 
+	bgShort: "Run watch in the background — start | stop | status | logs",
+	bgLong: `Run the watch daemon detached from the terminal so it keeps pinging across 5h windows after you close the shell.
+
+Subcommands:
+  start [provider]   launch the background watcher (also takes --dry-run)
+  stop               stop the background watcher
+  status             show whether it's running (this is also what bare 'bg' prints)
+  logs               show its log output (-f to follow, -n N for the last N lines)
+
+Only one background watcher runs at a time. The process detaches into its own session, so it survives the terminal closing — but it does not restart on reboot (use a launchd/systemd agent for start-at-login).`,
+	bgExample:    "  limitping bg start          # start in the background\n  limitping bg start codex    # only Codex\n  limitping bg status         # is it running?  (same as: limitping bg)\n  limitping bg logs -f        # follow the log\n  limitping bg stop           # stop it",
+	bgStartShort: "Start watch as a background process",
+	bgStartLong: `Launch the watch daemon in the background (detached from the terminal) and return immediately, freeing your shell. Output goes to a log file under the config directory.
+
+Arguments:
+  provider  Optional. One of: claude, codex, all.
+            Defaults to all, which watches every enabled provider.
+
+Examples:
+  limitping bg start
+  limitping bg start claude
+  limitping bg start --dry-run`,
+	bgStatusShort:    "Show whether the background watcher is running",
+	bgStopShort:      "Stop the background watcher",
+	bgLogsShort:      "Show the background watcher's log output",
+	bgLogsFollowFlag: "follow the log output (like tail -f)",
+	bgLogsLinesFlag:  "number of trailing log lines to show",
+
+	bgHintStart:       "Start it with: limitping bg start [claude|codex] [--dry-run]",
+	bgHintManage:      "Manage it with: limitping bg logs -f  |  limitping bg stop",
+	bgNotRunning:      "Background watch: not running.",
+	bgClearedStaleFmt: "Background watch: not running (cleared stale pid %d).\n",
+	bgRunningFmt:      "Background watch: running (pid %d).\n",
+	bgFieldWatching:   "watching",
+	bgFieldUptime:     "uptime",
+	bgFieldStarted:    "started",
+	bgFieldLogs:       "logs",
+	bgStartedFmt:      "Started background watch (pid %d, provider %s%s).\n",
+	bgLogPathFmt:      "Logs: %s\n",
+	bgStartFollowUp:   "Check status with `limitping bg status`; stop with `limitping bg stop`.",
+	bgStopWasStaleFmt: "Background watch was not running (cleared stale pid %d).\n",
+	bgStoppedFmt:      "Stopped background watch (pid %d).\n",
+	bgNoLogYetFmt:     "No log file yet at %s\n",
+
 	configShort:     "Manage the configuration file",
 	configInitShort: "Write a default config file",
 	configInitForce: "overwrite an existing config",
@@ -278,6 +350,50 @@ var zhText = cliText{
   limitping w claude
   limitping watch --dry-run`,
 	watchDryRunFlag: "只记录何时会触发，不真正发送",
+
+	bgShort: "在后台运行 watch —— start | stop | status | logs",
+	bgLong: `以脱离终端的方式在后台运行 watch 守护进程，关闭终端后仍会在每个 5h 窗口重置时持续 ping。
+
+子命令:
+  start [provider]   启动后台监听（也支持 --dry-run）
+  stop               停止后台监听
+  status             查看是否在运行（直接运行 bg 也是这个）
+  logs               查看日志（-f 持续跟踪，-n N 查看最后 N 行）
+
+同一时间只会运行一个后台监听。该进程会脱离到独立会话，关闭终端后依然存活——但开机不会自启（如需开机自启，请使用 launchd/systemd 等服务）。`,
+	bgExample:    "  limitping bg start          # 在后台启动\n  limitping bg start codex    # 只监测 Codex\n  limitping bg status         # 是否在运行?(等同于 limitping bg)\n  limitping bg logs -f        # 持续查看日志\n  limitping bg stop           # 停止",
+	bgStartShort: "以后台进程方式启动 watch",
+	bgStartLong: `在后台（脱离终端）启动 watch 守护进程并立即返回，释放当前终端。输出会写入配置目录下的日志文件。
+
+参数:
+  provider  可选。取值: claude、codex、all。
+            默认是 all，会监测所有已启用的 Provider。
+
+示例:
+  limitping bg start
+  limitping bg start claude
+  limitping bg start --dry-run`,
+	bgStatusShort:    "查看后台监听是否在运行",
+	bgStopShort:      "停止后台监听",
+	bgLogsShort:      "查看后台监听的日志输出",
+	bgLogsFollowFlag: "持续跟踪日志输出（类似 tail -f）",
+	bgLogsLinesFlag:  "显示最后多少行日志",
+
+	bgHintStart:       "启动: limitping bg start [claude|codex] [--dry-run]",
+	bgHintManage:      "管理: limitping bg logs -f  |  limitping bg stop",
+	bgNotRunning:      "后台监听：未在运行。",
+	bgClearedStaleFmt: "后台监听：未在运行（已清理失效的 pid %d）。\n",
+	bgRunningFmt:      "后台监听：正在运行（pid %d）。\n",
+	bgFieldWatching:   "监测",
+	bgFieldUptime:     "运行时长",
+	bgFieldStarted:    "启动于",
+	bgFieldLogs:       "日志",
+	bgStartedFmt:      "已在后台启动监听（pid %d，Provider %s%s）。\n",
+	bgLogPathFmt:      "日志：%s\n",
+	bgStartFollowUp:   "用 `limitping bg status` 查看状态，用 `limitping bg stop` 停止。",
+	bgStopWasStaleFmt: "后台监听原本未在运行（已清理失效的 pid %d）。\n",
+	bgStoppedFmt:      "已停止后台监听（pid %d）。\n",
+	bgNoLogYetFmt:     "暂无日志文件：%s\n",
 
 	configShort:     "管理配置文件",
 	configInitShort: "写入默认配置文件",

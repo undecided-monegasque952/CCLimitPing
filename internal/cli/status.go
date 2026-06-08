@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -40,7 +41,7 @@ func newStatusCmd() *cobra.Command {
 					failed++
 					continue
 				}
-				printUsage(cmd, u, verbose)
+				printUsage(out, u, verbose)
 			}
 			if failed > 0 {
 				return fmt.Errorf("status failed for %d provider(s)", failed)
@@ -52,8 +53,7 @@ func newStatusCmd() *cobra.Command {
 	return cmd
 }
 
-func printUsage(cmd *cobra.Command, u *usage.Usage, verbose bool) {
-	out := cmd.OutOrStdout()
+func printUsage(out io.Writer, u *usage.Usage, verbose bool) {
 	plan := u.Plan
 	if plan != "" {
 		plan = " (" + plan + ")"

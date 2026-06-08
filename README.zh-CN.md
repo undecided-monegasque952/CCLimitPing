@@ -37,7 +37,10 @@ curl -fsSL https://raw.githubusercontent.com/wavever/CCLimitPing/main/install.sh
 limitping config init
 limitping ping --dry-run
 limitping status
-limitping watch
+limitping watch                # 前台运行(Ctrl-C 停止)
+# ...或在后台运行,释放终端:
+limitping bg start
+limitping bg status
 ```
 
 如果你想先确认会发生什么、但不消耗 Provider 额度,先运行
@@ -140,6 +143,10 @@ limitping ping --dry-run       # 只打印将执行的命令,不真正发送
 limitping watch                # 前台守护:在每个窗口重置时自动 ping(简称: w)
 limitping watch claude         # 只监测某一个 Provider(claude|codex)
 limitping watch --dry-run      # 只记录何时会触发,不真正发送
+limitping bg start             # 在后台运行 watch,释放终端
+limitping bg status            # 是否在运行?并列出各 Provider 用量(等同于 limitping bg)
+limitping bg logs -f           # 持续查看后台监听的日志
+limitping bg stop              # 停止后台监听
 limitping hooks install        # 安装活跃会话检测钩子(claude|codex|all)
 limitping hooks uninstall      # 移除这些钩子
 limitping version              # 打印版本号(简称: v、ver)
@@ -159,6 +166,7 @@ limitping uninstall            # 删除 limitping 以及配置/缓存(简称: rm
 | `status` | `s`、`stat` |
 | `ping` | `p` |
 | `watch` | `w` |
+| `background` | `bg` |
 | `config` | `c`、`cfg` |
 | `config init` | `c i` |
 | `config path` | `c p` |
@@ -266,9 +274,22 @@ limitping hooks install        # 两个 Provider 都装(或 limitping hooks inst
 > 在 Codex 中运行一次 `/hooks` 启用即可。之后用 `limitping hooks uninstall` 全部移除
 > (`limitping uninstall` 也会自动清理)。
 
-## 后台运行 `watch`(macOS,可选)
+## 后台运行 `watch`
 
-`watch` 默认前台运行。要用 `launchd` 常驻,创建
+`watch` 默认前台运行。要释放终端,可用内置的 `bg` 命令把它作为脱离终端的后台进程运行:
+
+```sh
+limitping bg start          # 脱离终端,在后台启动 watch
+limitping bg status         # 是否在运行?pid、运行时长、日志 + 各 Provider 用量(等同于 limitping bg)
+limitping bg logs -f        # 持续查看日志(-n N 查看最后 N 行)
+limitping bg stop           # 停止
+```
+
+`bg start` 支持与 `watch` 相同的可选 `[provider]` 参数和 `--dry-run` 选项。同一时间只会
+运行一个后台监听,其输出写入 `~/.config/limitping/bg.log`(遵循 `$XDG_CONFIG_HOME`)。该进程
+会脱离到独立会话,关闭终端后依然存活——但**开机不会自启**。
+
+如需在 macOS 上**开机自启**,请改用 `launchd` 服务。创建
 `~/Library/LaunchAgents/com.limitping.watch.plist`:
 
 ```xml
@@ -316,7 +337,7 @@ internal/activity        基于钩子的活跃会话状态(hook 命令与 schedu
 internal/pricing         基于 LiteLLM 的美元费用查询(Codex)
 internal/scheduler       watch 引擎(sleep 到重置、尊重周限额、退避重试)
 internal/notify          macOS osascript 通知
-internal/cli             cobra 命令:status、ping、watch、config、hooks、upgrade、uninstall、version
+internal/cli             cobra 命令:status、ping、watch、background、config、hooks、upgrade、uninstall、version
 ```
 
 ## 贡献
