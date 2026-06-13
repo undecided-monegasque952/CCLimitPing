@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -89,5 +90,51 @@ chatgpt_base_url = "https://api.openai.com"
 `
 	if got := parseCodexBaseURL(contents); got != "https://api.openai.com" {
 		t.Fatalf("base url = %q", got)
+	}
+}
+
+func TestCodexTriggerDryRunUsesInteractiveCommand(t *testing.T) {
+	c := NewCodex(config.ProviderConfig{
+		Prompt:          "ok",
+		Model:           "gpt-5.4-mini",
+		ReasoningEffort: "low",
+		ExtraArgs: []string{
+			"--skip-git-repo-check",
+			"--json",
+			"--output-schema", "schema.json",
+			"--search",
+			"--sandbox", "read-only",
+		},
+	})
+
+	res, err := c.Trigger(context.Background(), true)
+	if err != nil {
+		t.Fatalf("dry-run trigger: %v", err)
+	}
+	want := "codex -c model_reasoning_effort=low -m gpt-5.4-mini --search --sandbox read-only ok"
+	if res.Command != want {
+		t.Fatalf("command = %q, want %q", res.Command, want)
+	}
+	if strings.Contains(res.Command, "exec") || strings.Contains(res.Command, "--json") {
+		t.Fatalf("command still uses headless mode: %q", res.Command)
+	}
+}
+
+func TestCodexInteractiveArgsDropsExecOnlyFlags(t *testing.T) {
+	got := codexInteractiveArgs([]string{
+		"--skip-git-repo-check",
+		"--ephemeral",
+		"--ignore-user-config",
+		"--ignore-rules",
+		"--json",
+		"--output-schema=schema.json",
+		"--output-last-message", "out.txt",
+		"--color", "never",
+		"--search",
+		"-C", "/tmp/project",
+	})
+	want := []string{"--search", "-C", "/tmp/project"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("interactive args = %#v, want %#v", got, want)
 	}
 }

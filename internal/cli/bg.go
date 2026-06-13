@@ -27,8 +27,8 @@ const bgUsageTimeout = 30 * time.Second
 //	<config dir>/bg.log    the watcher's combined stdout/stderr
 //
 // One background watcher runs at a time; `start` refuses to launch a second.
-// Triggering still works detached because each provider allocates its own PTY
-// (Claude) or runs headless (Codex) — neither needs the parent's terminal.
+// Triggering still works detached because each provider allocates its own PTY;
+// neither needs the parent's terminal.
 
 const (
 	bgStateName = "bg.json"

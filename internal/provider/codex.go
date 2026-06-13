@@ -1,10 +1,10 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/creack/pty"
 
 	"github.com/wavever/CCLimitPing/internal/activity"
 	"github.com/wavever/CCLimitPing/internal/auth"
 	"github.com/wavever/CCLimitPing/internal/config"
-	"github.com/wavever/CCLimitPing/internal/pricing"
 	"github.com/wavever/CCLimitPing/internal/usage"
 )
 
@@ -27,10 +27,17 @@ const (
 	codexChatGPTPath    = "/wham/usage"
 	codexAPIPath        = "/api/codex/usage"
 	codexUserAgent      = "limitping"
+
+	codexTurnMinWait  = 4 * time.Second
+	codexTurnQuiet    = 2500 * time.Millisecond
+	codexTurnMaxWait  = 45 * time.Second
+	codexExitGrace    = 5 * time.Second
+	codexPollInterval = 200 * time.Millisecond
 )
 
 // Codex reads usage via the ChatGPT backend usage endpoint and triggers windows
-// via the `codex exec` headless CLI.
+// via the interactive, TTY-backed Codex CLI. Headless `codex exec` can consume
+// tokens without anchoring the subscription-backed Codex window.
 type Codex struct {
 	cfg  config.ProviderConfig
 	auth *auth.CodexAuth
@@ -190,62 +197,159 @@ func (c *Codex) Trigger(ctx context.Context, dryRun bool) (*TriggerResult, error
 	if prompt == "" {
 		prompt = "ok"
 	}
-	args := []string{"exec", "--skip-git-repo-check", "--json"}
+	args := []string{}
 	if c.cfg.ReasoningEffort != "" {
 		args = append(args, "-c", "model_reasoning_effort="+c.cfg.ReasoningEffort)
 	}
 	if c.cfg.Model != "" {
 		args = append(args, "-m", c.cfg.Model)
 	}
-	args = append(args, c.cfg.ExtraArgs...)
+	args = append(args, codexInteractiveArgs(c.cfg.ExtraArgs)...)
 	args = append(args, prompt)
 	res := &TriggerResult{Command: "codex " + shellJoin(args)}
 	if dryRun {
 		return res, nil
 	}
 
-	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "codex", args...)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return res, fmt.Errorf("codex exec failed: %w: %s", err, truncate(append(stderr.Bytes(), stdout.Bytes()...), 300))
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return res, fmt.Errorf("codex interactive failed to start: %w", err)
+	}
+	defer ptmx.Close()
+
+	output := &limitedBuffer{limit: 4096}
+	go func() {
+		_, _ = io.Copy(output, ptmx)
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	if terminal, err := codexAwait(ctx, cmd, ptmx, output, done, codexTurnMaxWait,
+		func(idle, elapsed time.Duration) bool {
+			return elapsed >= codexTurnMinWait && idle >= codexTurnQuiet
+		}); terminal {
+		return res, err
 	}
 
-	// codex exec --json emits JSONL; the final `turn.completed` event carries
-	// the turn's token usage. output_tokens already includes reasoning tokens,
-	// so we don't add reasoning_output_tokens again.
-	var cached int
-	for _, line := range bytes.Split(stdout.Bytes(), []byte("\n")) {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		var ev struct {
-			Type  string `json:"type"`
-			Usage *struct {
-				InputTokens       int `json:"input_tokens"`
-				CachedInputTokens int `json:"cached_input_tokens"`
-				OutputTokens      int `json:"output_tokens"`
-			} `json:"usage"`
-		}
-		if err := json.Unmarshal(line, &ev); err != nil || ev.Type != "turn.completed" || ev.Usage == nil {
-			continue
-		}
-		res.InputTokens = ev.Usage.InputTokens
-		res.OutputTokens = ev.Usage.OutputTokens
-		res.TotalTokens = res.InputTokens + res.OutputTokens
-		res.HasUsage = true
-		cached = ev.Usage.CachedInputTokens
-	}
+	return res, codexInteractiveStop(ctx, cmd, ptmx, done, output)
+}
 
-	// Codex doesn't report a USD cost; derive it from LiteLLM rates like
-	// CodexBar/ccusage do.
-	if res.HasUsage && c.cfg.Model != "" {
-		pctx, pcancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if price, ok := pricing.Default().Lookup(pctx, c.cfg.Model); ok {
-			res.CostUSD = price.Cost(res.InputTokens, cached, res.OutputTokens)
+func codexAwait(ctx context.Context, cmd *exec.Cmd, ptmx *os.File, output *limitedBuffer, done <-chan error, maxWait time.Duration, ready func(idle, elapsed time.Duration) bool) (bool, error) {
+	start := time.Now()
+	deadline := time.After(maxWait)
+	ticker := time.NewTicker(codexPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return true, codexInteractiveErr(err, output)
+		case <-ctx.Done():
+			return true, codexInteractiveCancel(ctx, cmd, ptmx, done, output)
+		case <-deadline:
+			return false, nil
+		case <-ticker.C:
+			changed := output.changedAt()
+			if !changed.IsZero() && ready(time.Since(changed), time.Since(start)) {
+				return false, nil
+			}
 		}
-		pcancel()
 	}
-	return res, nil
+}
+
+func codexInteractiveStop(ctx context.Context, cmd *exec.Cmd, ptmx *os.File, done <-chan error, output *limitedBuffer) error {
+	deadline := time.After(codexExitGrace)
+	ticker := time.NewTicker(codexExitGrace / 2)
+	defer ticker.Stop()
+
+	for sent := false; ; {
+		if !sent {
+			_, _ = ptmx.Write([]byte{0x03})
+			sent = true
+		}
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return codexInteractiveCancel(ctx, cmd, ptmx, done, output)
+		case <-ticker.C:
+			_, _ = ptmx.Write([]byte{0x03})
+		case <-deadline:
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+			}
+			return nil
+		}
+	}
+}
+
+func codexInteractiveErr(err error, output *limitedBuffer) error {
+	if err == nil {
+		return nil
+	}
+	tail := truncate(output.Bytes(), 300)
+	if tail == "" {
+		return fmt.Errorf("codex interactive failed: %w", err)
+	}
+	return fmt.Errorf("codex interactive failed: %w: %s", err, tail)
+}
+
+func codexInteractiveCancel(ctx context.Context, cmd *exec.Cmd, ptmx *os.File, done <-chan error, output *limitedBuffer) error {
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	_ = ptmx.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+	}
+	tail := truncate(output.Bytes(), 300)
+	if tail == "" {
+		return fmt.Errorf("codex interactive cancelled: %w", ctx.Err())
+	}
+	return fmt.Errorf("codex interactive cancelled: %w: %s", ctx.Err(), tail)
+}
+
+func codexInteractiveArgs(extra []string) []string {
+	out := make([]string, 0, len(extra))
+	for i := 0; i < len(extra); i++ {
+		arg := extra[i]
+		flag, inlineValue := splitFlagValue(arg)
+		if codexInteractiveUnsupportedValueArg(flag) {
+			if !inlineValue && i+1 < len(extra) {
+				i++
+			}
+			continue
+		}
+		if codexInteractiveUnsupportedArg(flag) {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
+func codexInteractiveUnsupportedArg(flag string) bool {
+	switch flag {
+	case "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--json":
+		return true
+	default:
+		return false
+	}
+}
+
+func codexInteractiveUnsupportedValueArg(flag string) bool {
+	switch flag {
+	case "--output-schema", "--output-last-message", "--color", "-o":
+		return true
+	default:
+		return false
+	}
 }
